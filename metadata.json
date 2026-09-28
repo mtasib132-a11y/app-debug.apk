@@ -1,0 +1,6 @@
+{
+  "name": "HGZY Ultra",
+  "description": "WinGo Bangladesh Time live prediction system, 4-indicator consensus engine, 3-step Martingale money management calculator, and historical trend analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>D3.js /api/v1/history/stats Visualizer</title>
+  <script src="d3.v7.min.js"></script>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    body {
+      background-color: #0B1120;
+      color: #F8FAFC;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      padding: 10px;
+      overflow-x: hidden;
+    }
+    .header-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .chart-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #38BDF8;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .badge {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 2px 7px;
+      border-radius: 4px;
+      background: #1E293B;
+      color: #38BDF8;
+      border: 1px solid #0284C7;
+    }
+    .control-row {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 10px;
+      flex-wrap: wrap;
+    }
+    .btn-toggle {
+      background: #131D33;
+      border: 1px solid #334155;
+      color: #94A3B8;
+      padding: 6px 10px;
+      font-size: 11px;
+      font-weight: 600;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .btn-toggle.active {
+      background: rgba(56, 189, 248, 0.2);
+      color: #38BDF8;
+      border-color: #38BDF8;
+    }
+    .stats-summary {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+    .stat-card {
+      background: #131D33;
+      border: 1px solid #1E293B;
+      border-radius: 8px;
+      padding: 6px 8px;
+      text-align: center;
+    }
+    .stat-label {
+      font-size: 9px;
+      color: #94A3B8;
+      text-transform: uppercase;
+      font-weight: 600;
+    }
+    .stat-value {
+      font-size: 13px;
+      font-weight: 800;
+      margin-top: 2px;
+    }
+    .stat-blue { color: #38BDF8; }
+    .stat-green { color: #34D399; }
+    .stat-red { color: #F87171; }
+    .stat-amber { color: #F59E0B; }
+
+    #chart-container {
+      width: 100%;
+      background: #131D33;
+      border: 1px solid #1E293B;
+      border-radius: 12px;
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+    }
+    svg {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+    .grid line {
+      stroke: #1E293B;
+      stroke-opacity: 0.8;
+      shape-rendering: crispEdges;
+    }
+    .axis text {
+      fill: #64748B;
+      font-size: 10px;
+      font-family: inherit;
+    }
+    .axis line, .axis path {
+      stroke: #334155;
+    }
+    .tooltip {
+      position: absolute;
+      pointer-events: none;
+      background: rgba(15, 23, 42, 0.95);
+      border: 1px solid #334155;
+      padding: 8px 10px;
+      border-radius: 8px;
+      font-size: 11px;
+      color: #F8FAFC;
+      box-shadow: 0 8px 16px rgba(0,0,0,0.6);
+      transform: translate(-50%, -115%);
+      display: none;
+      z-index: 100;
+      min-width: 120px;
+      backdrop-filter: blur(4px);
+    }
+    .tooltip-title {
+      color: #94A3B8;
+      font-size: 9px;
+      margin-bottom: 2px;
+    }
+    .tooltip-val {
+      font-weight: 800;
+      font-size: 13px;
+    }
+    .boundary-line {
+      stroke: #F59E0B;
+      stroke-dasharray: 4, 3;
+      stroke-width: 1.2px;
+      opacity: 0.8;
+    }
+    .boundary-text {
+      fill: #F59E0B;
+      font-size: 9px;
+      font-weight: 600;
+    }
+    .mean-line {
+      stroke: #38BDF8;
+      stroke-dasharray: 3, 3;
+      stroke-width: 1.2px;
+      opacity: 0.8;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header-bar">
+    <div class="chart-title">
+      <span>D3.js /api/v1/history/stats</span>
+    </div>
+    <div class="badge" id="source-badge">Live Endpoint</div>
+  </div>
+
+  <!-- Mode Selector Buttons -->
+  <div class="control-row">
+    <button class="btn-toggle active" id="btn-trend" onclick="switchView('trend')">Recent 10 Trend (Line)</button>
+    <button class="btn-toggle" id="btn-dist" onclick="switchView('distribution')">Number Distribution 0-9 (Line)</button>
+    <button class="btn-toggle" id="btn-dual" onclick="switchView('dual')">Dual Synchronized</button>
+  </div>
+
+  <!-- Key Metrics Row -->
+  <div class="stats-summary">
+    <div class="stat-card">
+      <div class="stat-label">Recent Trend 10</div>
+      <div class="stat-value stat-blue" id="stat-trend-summary">--</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Most Frequent (Hot)</div>
+      <div class="stat-value stat-green" id="stat-hot-num">--</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Least Frequent (Cold)</div>
+      <div class="stat-value stat-red" id="stat-cold-num">--</div>
+    </div>
+  </div>
+
+  <!-- D3 Chart Canvas -->
+  <div id="chart-container">
+    <div class="tooltip" id="tooltip"></div>
+    <svg id="d3-stats-svg"></svg>
+  </div>
+
+  <script>
+    let statsData = {
+      total_analyzed_rounds: 0,
+      recent_10_trend: [],
+      number_distribution: {}
+    };
+    let currentView = 'trend'; // 'trend', 'distribution', 'dual'
+
+    function switchView(view) {
+      currentView = view;
+      document.querySelectorAll('#btn-trend, #btn-dist, #btn-dual').forEach(b => b.classList.remove('active'));
+      if (view === 'trend') document.getElementById('btn-trend').classList.add('active');
+      if (view === 'distribution') document.getElementById('btn-dist').classList.add('active');
+      if (view === 'dual') document.getElementById('btn-dual').classList.add('active');
+      renderChart();
+    }
+
+    // Called from Kotlin WebView evaluateJavascript
+    window.loadStatsFromEndpoint = function(jsonPayload) {
+      try {
+        const parsed = typeof jsonPayload === 'string' ? JSON.parse(jsonPayload) : jsonPayload;
+        // Supports raw { status: "SUCCESS", data: { ... } } or direct data object
+        const data = parsed.data || parsed;
+        if (data) {
+          statsData = {
+            total_analyzed_rounds: data.total_analyzed_rounds || 0,
+            recent_10_trend: data.recent_10_trend || [],
+            number_distribution: data.number_distribution || {}
+          };
+          renderChart();
+        }
+      } catch (err) {
+        console.error("Failed to parse stats json", err);
+      }
+    };
+
+    function renderChart() {
+      const recent10 = statsData.recent_10_trend || [];
+      const dist = statsData.number_distribution || {};
+
+      // Compute Hot & Cold Numbers from distribution
+      let hotNum = '-', coldNum = '-';
+      let maxCount = -1, minCount = 999999;
+      for (let i = 0; i <= 9; i++) {
+        const c = dist[i] !== undefined ? dist[i] : (dist[String(i)] || 0);
+        if (c > maxCount) { maxCount = c; hotNum = `${i} (${c}x)`; }
+        if (c < minCount) { minCount = c; coldNum = `${i} (${c}x)`; }
+      }
+
+      // Compute Big/Small in recent 10
+      const bigInRecent = recent10.filter(r => r.size === 'BIG').length;
+      const smallInRecent = recent10.length - bigInRecent;
+
+      document.getElementById('stat-trend-summary').innerText = `${bigInRecent}B / ${smallInRecent}S`;
+      document.getElementById('stat-hot-num').innerText = hotNum;
+      document.getElementById('stat-cold-num').innerText = coldNum;
+
+      const container = document.getElementById('chart-container');
+      const width = container.clientWidth || 360;
+      const height = currentView === 'dual' ? 380 : 250;
+
+      const svg = d3.select('#d3-stats-svg');
+      svg.selectAll('*').remove();
+      svg.attr('width', width).attr('height', height).attr('viewBox', `0 0 ${width} ${height}`);
+
+      const defs = svg.append('defs');
+
+      // Gradients
+      const trendGrad = defs.append('linearGradient')
+        .attr('id', 'trend-grad')
+        .attr('x1', '0%').attr('y1', '0%')
+        .attr('x2', '0%').attr('y2', '100%');
+      trendGrad.append('stop').attr('offset', '0%').attr('stop-color', '#10B981').attr('stop-opacity', 0.4);
+      trendGrad.append('stop').attr('offset', '100%').attr('stop-color', '#EF4444').attr('stop-opacity', 0.1);
+
+      const distGrad = defs.append('linearGradient')
+        .attr('id', 'dist-grad')
+        .attr('x1', '0%').attr('y1', '0%')
+        .attr('x2', '0%').attr('y2', '100%');
+      distGrad.append('stop').attr('offset', '0%').attr('stop-color', '#38BDF8').attr('stop-opacity', 0.45);
+      distGrad.append('stop').attr('offset', '100%').attr('stop-color', '#1E293B').attr('stop-opacity', 0.05);
+
+      const tooltip = d3.select('#tooltip');
+
+      if (currentView === 'trend') {
+        renderRecent10Trend(svg, recent10, width, height, tooltip);
+      } else if (currentView === 'distribution') {
+        renderNumberDistribution(svg, dist, width, height, tooltip);
+      } else {
+        renderDualViews(svg, recent10, dist, width, height, tooltip);
+      }
+    }
+
+    function renderRecent10Trend(svg, trendData, width, height, tooltip) {
+      const margin = { top: 25, right: 20, bottom: 30, left: 35 };
+      const innerW = width - margin.left - margin.right;
+      const innerH = height - margin.top - margin.bottom;
+
+      // Chronological order (1st earliest in the 10-window to 10th latest)
+      const data = [...trendData].reverse();
+
+      const g = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+
+      const xScale = d3.scaleLinear()
+        .domain([0, Math.max(1, data.length - 1)])
+        .range([0, innerW]);
+
+      const yScale = d3.scaleLinear()
+        .domain([-0.5, 9.5])
+        .range([innerH, 0]);
+
+      // Grid
+      g.append('g').attr('class', 'grid')
+        .call(d3.axisLeft(yScale).ticks(10).tickSize(-innerW).tickFormat(''));
+
+      // 4.5 Boundary Line
+      g.append('line')
+        .attr('class', 'boundary-line')
+        .attr('x1', 0).attr('x2', innerW)
+        .attr('y1', yScale(4.5)).attr('y2', yScale(4.5));
+
+      g.append('text')
+        .attr('class', 'boundary-text')
+        .attr('x', innerW - 5)
+        .attr('y', yScale(4.5) - 4)
+        .attr('text-anchor', 'end')
+        .text('Threshold 4.5 (BIG / SMALL)');
+
+      // Area fill
+      const area = d3.area()
+        .x((d, i) => xScale(i))
+        .y0(yScale(0))
+        .y1(d => yScale(d.number))
+        .curve(d3.curveMonotoneX);
+
+      g.append('path')
+        .datum(data)
+        .attr('fill', 'url(#trend-grad)')
+        .attr('d', area);
+
+      // Line
+      const line = d3.line()
+        .x((d, i) => xScale(i))
+        .y(d => yScale(d.number))
+        .curve(d3.curveMonotoneX);
+
+      g.append('path')
+        .datum(data)
+        .attr('fill', 'none')
+        .attr('stroke', '#38BDF8')
+        .attr('stroke-width', 2.5)
+        .attr('d', line);
+
+      // Axes
+      g.append('g')
+        .attr('class', 'axis')
+        .attr('transform', `translate(0,${innerH})`)
+        .call(d3.axisBottom(xScale).ticks(data.length).tickFormat(i => `R${i + 1}`));
+
+      g.append('g')
+        .attr('class', 'axis')
+        .call(d3.axisLeft(yScale).ticks(10).tickFormat(d3.format('d')));
+
+      // Nodes
+      const dots = g.selectAll('.trend-dot')
+        .data(data)
+        .enter()
+        .append('g')
+        .attr('transform', (d, i) => `translate(${xScale(i)},${yScale(d.number)})`);
+
+      dots.append('circle')
+        .attr('r', 5.5)
+        .attr('fill', d => d.size === 'BIG' ? '#10B981' : '#EF4444')
+        .attr('stroke', d => d.color.includes('VIOLET') ? '#A855F7' : '#FFFFFF')
+        .attr('stroke-width', 1.8);
+
+      dots.append('text')
+        .attr('y', -9)
+        .attr('text-anchor', 'middle')
+        .attr('fill', '#F8FAFC')
+        .attr('font-size', '10px')
+        .attr('font-weight', '700')
+        .text(d => d.number);
+
+      // Overlay for Touch / Cursor
+      attachOverlay(g, data, xScale, yScale, innerW, innerH, tooltip, margin, 'trend');
+    }
+
+    function renderNumberDistribution(svg, distObj, width, height, tooltip) {
+      const margin = { top: 25, right: 20, bottom: 30, left: 35 };
+      const innerW = width - margin.left - margin.right;
+      const innerH = height - margin.top - margin.bottom;
+
+      const data = [];
+      let totalCount = 0;
+      for (let i = 0; i <= 9; i++) {
+        const count = distObj[i] !== undefined ? distObj[i] : (distObj[String(i)] || 0);
+        totalCount += count;
+        data.push({ digit: i, count: count });
+      }
+
+      const meanCount = totalCount > 0 ? (totalCount / 10) : 0;
+      const maxCount = Math.max(12, d3.max(data, d => d.count) + 2);
+
+      const g = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+
+      const xScale = d3.scaleLinear().domain([0, 9]).range([0, innerW]);
+      const yScale = d3.scaleLinear().domain([0, maxCount]).range([innerH, 0]);
+
+      // Grid
+      g.append('g').attr('class', 'grid')
+        .call(d3.axisLeft(yScale).ticks(5).tickSize(-innerW).tickFormat(''));
+
+      // Mean Line
+      g.append('line')
+        .attr('class', 'mean-line')
+        .attr('x1', 0).attr('x2', innerW)
+        .attr('y1', yScale(meanCount)).attr('y2', yScale(meanCount));
+
+      g.append('text')
+        .attr('x', innerW - 5)
+        .attr('y', yScale(meanCount) - 4)
+        .attr('fill', '#38BDF8')
+        .attr('font-size', '9px')
+        .attr('font-weight', '600')
+        .attr('text-anchor', 'end')
+        .text(`Mean: ${meanCount.toFixed(1)}`);
+
+      // Area fill
+      const area = d3.area()
+        .x(d => xScale(d.digit))
+        .y0(yScale(0))
+        .y1(d => yScale(d.count))
+        .curve(d3.curveMonotoneX);
+
+      g.append('path')
+        .datum(data)
+        .attr('fill', 'url(#dist-grad)')
+        .attr('d', area);
+
+      // Line
+      const line = d3.line()
+        .x(d => xScale(d.digit))
+        .y(d => yScale(d.count))
+        .curve(d3.curveMonotoneX);
+
+      g.append('path')
+        .datum(data)
+        .attr('fill', 'none')
+        .attr('stroke', '#38BDF8')
+        .attr('stroke-width', 2.5)
+        .attr('d', line);
+
+      // Axes
+      g.append('g')
+        .attr('class', 'axis')
+        .attr('transform', `translate(0,${innerH})`)
+        .call(d3.axisBottom(xScale).ticks(10).tickFormat(d => `Num ${d}`));
+
+      g.append('g')
+        .attr('class', 'axis')
+        .call(d3.axisLeft(yScale).ticks(5).tickFormat(d3.format('d')));
+
+      // Nodes
+      const dots = g.selectAll('.dist-dot')
+        .data(data)
+        .enter()
+        .append('g')
+        .attr('transform', d => `translate(${xScale(d.digit)},${yScale(d.count)})`);
+
+      dots.append('circle')
+        .attr('r', 5.5)
+        .attr('fill', d => d.digit >= 5 ? '#10B981' : '#EF4444')
+        .attr('stroke', '#38BDF8')
+        .attr('stroke-width', 1.8);
+
+      dots.append('text')
+        .attr('y', -8)
+        .attr('text-anchor', 'middle')
+        .attr('fill', '#38BDF8')
+        .attr('font-size', '10px')
+        .attr('font-weight', '700')
+        .text(d => d.count);
+
+      attachOverlay(g, data, xScale, yScale, innerW, innerH, tooltip, margin, 'distribution', totalCount);
+    }
+
+    function renderDualViews(svg, trendData, distObj, width, totalHeight, tooltip) {
+      const topH = 150;
+      const botH = 140;
+      const gap = 35;
+      const margin = { top: 20, right: 20, bottom: 25, left: 35 };
+      const innerW = width - margin.left - margin.right;
+
+      // Top: Recent 10 Trend
+      const gTop = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+      const tData = [...trendData].reverse();
+      const xT = d3.scaleLinear().domain([0, Math.max(1, tData.length - 1)]).range([0, innerW]);
+      const yT = d3.scaleLinear().domain([-0.5, 9.5]).range([topH, 0]);
+
+      gTop.append('g').attr('class', 'grid').call(d3.axisLeft(yT).ticks(5).tickSize(-innerW).tickFormat(''));
+      gTop.append('line').attr('class', 'boundary-line').attr('x1', 0).attr('x2', innerW).attr('y1', yT(4.5)).attr('y2', yT(4.5));
+
+      const lineT = d3.line().x((d, i) => xT(i)).y(d => yT(d.number)).curve(d3.curveMonotoneX);
+      gTop.append('path').datum(tData).attr('fill', 'none').attr('stroke', '#34D399').attr('stroke-width', 2).attr('d', lineT);
+
+      gTop.selectAll('.tdot').data(tData).enter().append('circle')
+        .attr('cx', (d, i) => xT(i)).attr('cy', d => yT(d.number)).attr('r', 4)
+        .attr('fill', d => d.size === 'BIG' ? '#10B981' : '#EF4444');
+
+      gTop.append('g').attr('class', 'axis').call(d3.axisLeft(yT).ticks(5).tickFormat(d3.format('d')));
+      gTop.append('text').attr('x', 0).attr('y', -6).attr('fill', '#34D399').attr('font-size', '10px').attr('font-weight', '700').text('Recent 10 Trend');
+
+      // Bottom: Distribution Line
+      const gBot = svg.append('g').attr('transform', `translate(${margin.left},${margin.top + topH + gap})`);
+      const dData = [];
+      for (let i = 0; i <= 9; i++) {
+        dData.push({ digit: i, count: distObj[i] !== undefined ? distObj[i] : (distObj[String(i)] || 0) });
+      }
+      const xD = d3.scaleLinear().domain([0, 9]).range([0, innerW]);
+      const maxC = Math.max(10, d3.max(dData, d => d.count) + 2);
+      const yD = d3.scaleLinear().domain([0, maxC]).range([botH, 0]);
+
+      gBot.append('g').attr('class', 'grid').call(d3.axisLeft(yD).ticks(4).tickSize(-innerW).tickFormat(''));
+      const lineD = d3.line().x(d => xD(d.digit)).y(d => yD(d.count)).curve(d3.curveMonotoneX);
+      gBot.append('path').datum(dData).attr('fill', 'none').attr('stroke', '#38BDF8').attr('stroke-width', 2).attr('d', lineD);
+
+      gBot.selectAll('.ddot').data(dData).enter().append('circle')
+        .attr('cx', d => xD(d.digit)).attr('cy', d => yD(d.count)).attr('r', 4)
+        .attr('fill', '#38BDF8');
+
+      gBot.append('g').attr('class', 'axis').attr('transform', `translate(0,${botH})`)
+        .call(d3.axisBottom(xD).ticks(10).tickFormat(d => `${d}`));
+      gBot.append('g').attr('class', 'axis').call(d3.axisLeft(yD).ticks(4).tickFormat(d3.format('d')));
+      gBot.append('text').attr('x', 0).attr('y', -6).attr('fill', '#38BDF8').attr('font-size', '10px').attr('font-weight', '700').text('Number Distribution (0-9)');
+
+      attachOverlay(gTop, tData, xT, yT, innerW, topH, tooltip, margin, 'trend');
+    }
+
+    function attachOverlay(g, data, xScale, yScale, innerW, innerH, tooltip, margin, type, totalCount = 100) {
+      const focusLine = g.append('line')
+        .attr('stroke', '#94A3B8')
+        .attr('stroke-width', 1)
+        .attr('stroke-dasharray', '2,2')
+        .attr('y1', 0).attr('y2', innerH)
+        .style('display', 'none');
+
+      const focusDot = g.append('circle')
+        .attr('r', 6)
+        .attr('fill', 'none')
+        .attr('stroke', '#FFFFFF')
+        .attr('stroke-width', 2)
+        .style('display', 'none');
+
+      function onMove(event) {
+        const coords = d3.pointer(event);
+        const xPos = coords[0];
+        const idx = Math.max(0, Math.min(data.length - 1, Math.round(xScale.invert(xPos))));
+        const d = data[idx];
+        if (!d) return;
+
+        const cx = xScale(type === 'distribution' ? d.digit : idx);
+        const cy = yScale(type === 'distribution' ? d.count : d.number);
+
+        focusLine.style('display', null).attr('x1', cx).attr('x2', cx);
+        focusDot.style('display', null).attr('cx', cx).attr('cy', cy);
+
+        if (type === 'trend') {
+          tooltip.style('display', 'block')
+            .style('left', `${cx + margin.left}px`)
+            .style('top', `${cy + margin.top}px`)
+            .html(`
+              <div class="tooltip-title">Round #${idx + 1}</div>
+              <div class="tooltip-val" style="color: ${d.size === 'BIG' ? '#34D399' : '#F87171'}">
+                Number: ${d.number} (${d.size})
+              </div>
+              <div style="font-size: 10px; color: #94A3B8; margin-top: 3px;">
+                Color: ${d.color}
+              </div>
+            `);
+        } else {
+          const pct = totalCount > 0 ? ((d.count / totalCount) * 100).toFixed(1) : 0;
+          tooltip.style('display', 'block')
+            .style('left', `${cx + margin.left}px`)
+            .style('top', `${cy + margin.top}px`)
+            .html(`
+              <div class="tooltip-title">Digit: ${d.digit}</div>
+              <div class="tooltip-val" style="color: #38BDF8">
+                Frequency: ${d.count} hits
+              </div>
+              <div style="font-size: 10px; color: #94A3B8; margin-top: 3px;">
+                Share: ${pct}% of ${totalCount} rounds
+              </div>
+            `);
+        }
+      }
+
+      function onOut() {
+        focusLine.style('display', 'none');
+        focusDot.style('display', 'none');
+        tooltip.style('display', 'none');
+      }
+
+      g.append('rect')
+        .attr('width', innerW)
+        .attr('height', innerH)
+        .attr('fill', 'transparent')
+        .style('cursor', 'crosshair')
+        .on('mousemove touchmove', onMove)
+        .on('mouseout touchend', onOut);
+    }
+
+    // Default Seed Data
+    statsData = {
+      total_analyzed_rounds: 100,
+      recent_10_trend: [
+        { number: 7, size: "BIG", color: "GREEN" },
+        { number: 2, size: "SMALL", color: "RED" },
+        { number: 8, size: "BIG", color: "RED" },
+        { number: 9, size: "BIG", color: "GREEN" },
+        { number: 3, size: "SMALL", color: "GREEN" },
+        { number: 1, size: "SMALL", color: "GREEN" },
+        { number: 6, size: "BIG", color: "RED" },
+        { number: 8, size: "BIG", color: "RED" },
+        { number: 4, size: "SMALL", color: "RED" },
+        { number: 0, size: "SMALL", color: "RED+VIOLET" }
+      ],
+      number_distribution: {
+        "0": 10, "1": 9, "2": 11, "3": 10, "4": 8,
+        "5": 12, "6": 10, "7": 11, "8": 10, "9": 9
+      }
+    };
+    renderChart();
+  </script>
+</body>
+</html>

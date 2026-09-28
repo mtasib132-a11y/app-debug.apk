@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>D3.js WinGo Trend & Frequency</title>
+  <script src="d3.v7.min.js"></script>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    body {
+      background-color: #0B1120;
+      color: #F8FAFC;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      padding: 10px;
+      overflow-x: hidden;
+    }
+    .header-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .chart-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #34D399;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .badge {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: #1E293B;
+      color: #94A3B8;
+      border: 1px solid #334155;
+    }
+    .control-row {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 10px;
+      flex-wrap: wrap;
+    }
+    .btn-toggle {
+      background: #131D33;
+      border: 1px solid #334155;
+      color: #94A3B8;
+      padding: 5px 9px;
+      font-size: 11px;
+      font-weight: 600;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .btn-toggle.active {
+      background: rgba(16, 185, 129, 0.2);
+      color: #34D399;
+      border-color: #10B981;
+    }
+    .stats-summary {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+    .stat-card {
+      background: #131D33;
+      border: 1px solid #1E293B;
+      border-radius: 8px;
+      padding: 6px 8px;
+      text-align: center;
+    }
+    .stat-label {
+      font-size: 9px;
+      color: #94A3B8;
+      text-transform: uppercase;
+      font-weight: 600;
+    }
+    .stat-value {
+      font-size: 13px;
+      font-weight: 800;
+      margin-top: 2px;
+    }
+    .stat-green { color: #34D399; }
+    .stat-red { color: #F87171; }
+    .stat-amber { color: #F59E0B; }
+    .stat-violet { color: #A855F7; }
+
+    #chart-container {
+      width: 100%;
+      background: #131D33;
+      border: 1px solid #1E293B;
+      border-radius: 12px;
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+    }
+    svg {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+    .grid line {
+      stroke: #1E293B;
+      stroke-opacity: 0.8;
+      shape-rendering: crispEdges;
+    }
+    .axis text {
+      fill: #64748B;
+      font-size: 10px;
+      font-family: inherit;
+    }
+    .axis line, .axis path {
+      stroke: #334155;
+    }
+    .tooltip {
+      position: absolute;
+      pointer-events: none;
+      background: rgba(15, 23, 42, 0.95);
+      border: 1px solid #334155;
+      padding: 8px 10px;
+      border-radius: 8px;
+      font-size: 11px;
+      color: #F8FAFC;
+      box-shadow: 0 8px 16px rgba(0,0,0,0.6);
+      transform: translate(-50%, -115%);
+      display: none;
+      z-index: 100;
+      min-width: 110px;
+      backdrop-filter: blur(4px);
+    }
+    .tooltip-period {
+      color: #94A3B8;
+      font-size: 9px;
+      margin-bottom: 2px;
+    }
+    .tooltip-val {
+      font-weight: 800;
+      font-size: 13px;
+    }
+    .boundary-line {
+      stroke: #F59E0B;
+      stroke-dasharray: 4, 3;
+      stroke-width: 1.2px;
+      opacity: 0.8;
+    }
+    .boundary-text {
+      fill: #F59E0B;
+      font-size: 9px;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header-bar">
+    <div class="chart-title">
+      <span>D3.js Trend Analytics</span>
+    </div>
+    <div class="badge" id="data-count-badge">100 Rounds</div>
+  </div>
+
+  <!-- Mode & Window Controls -->
+  <div class="control-row">
+    <button class="btn-toggle active" id="btn-mode-trend" onclick="setMode('trend')">Number Trend (0-9)</button>
+    <button class="btn-toggle" id="btn-mode-freq" onclick="setMode('frequency')">BIG/SMALL Freq %</button>
+    <button class="btn-toggle" id="btn-mode-dual" onclick="setMode('dual')">Dual Chart</button>
+    <div style="flex-grow: 1;"></div>
+    <button class="btn-toggle" id="btn-win-30" onclick="setWindow(30)">30R</button>
+    <button class="btn-toggle" id="btn-win-50" onclick="setWindow(50)">50R</button>
+    <button class="btn-toggle active" id="btn-win-100" onclick="setWindow(100)">100R</button>
+  </div>
+
+  <!-- Live Stats Strip -->
+  <div class="stats-summary">
+    <div class="stat-card">
+      <div class="stat-label">BIG (5-9)</div>
+      <div class="stat-value stat-green" id="stat-big-val">--%</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">SMALL (0-4)</div>
+      <div class="stat-value stat-red" id="stat-small-val">--%</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Active Streak</div>
+      <div class="stat-value stat-amber" id="stat-streak-val">--</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Avg Number</div>
+      <div class="stat-value stat-violet" id="stat-avg-val">--</div>
+    </div>
+  </div>
+
+  <!-- SVG Chart Container -->
+  <div id="chart-container">
+    <div class="tooltip" id="tooltip"></div>
+    <svg id="d3-svg"></svg>
+  </div>
+
+  <script>
+    let rawData = [];
+    let currentMode = 'trend'; // 'trend', 'frequency', 'dual'
+    let currentWindow = 100;
+
+    function setMode(mode) {
+      currentMode = mode;
+      document.querySelectorAll('#btn-mode-trend, #btn-mode-freq, #btn-mode-dual').forEach(b => b.classList.remove('active'));
+      if (mode === 'trend') document.getElementById('btn-mode-trend').classList.add('active');
+      if (mode === 'frequency') document.getElementById('btn-mode-freq').classList.add('active');
+      if (mode === 'dual') document.getElementById('btn-mode-dual').classList.add('active');
+      render();
+    }
+
+    function setWindow(num) {
+      currentWindow = num;
+      document.querySelectorAll('#btn-win-30, #btn-win-50, #btn-win-100').forEach(b => b.classList.remove('active'));
+      if (num === 30) document.getElementById('btn-win-30').classList.add('active');
+      if (num === 50) document.getElementById('btn-win-50').classList.add('active');
+      if (num === 100) document.getElementById('btn-win-100').classList.add('active');
+      render();
+    }
+
+    // Called from Android Kotlin via evaluateJavascript
+    window.updateDataFromAndroid = function(jsonString) {
+      try {
+        const parsed = typeof jsonString === 'string' ? JSON.parse(jsonString) : jsonString;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          rawData = parsed;
+          render();
+        }
+      } catch (e) {
+        console.error("Error parsing Android data", e);
+      }
+    };
+
+    function calculateRollingBigPct(data, windowSize = 10) {
+      return data.map((d, i) => {
+        const start = Math.max(0, i - windowSize + 1);
+        const slice = data.slice(start, i + 1);
+        const bigCount = slice.filter(x => x.size === 'BIG').length;
+        return {
+          ...d,
+          rollingBigPct: Math.round((bigCount / slice.length) * 100)
+        };
+      });
+    }
+
+    function calculateStreak(data) {
+      if (!data || data.length === 0) return { type: '-', count: 0 };
+      const last = data[data.length - 1];
+      let count = 1;
+      for (let i = data.length - 2; i >= 0; i--) {
+        if (data[i].size === last.size) {
+          count++;
+        } else {
+          break;
+        }
+      }
+      return { type: last.size, count };
+    }
+
+    function render() {
+      if (!rawData || rawData.length === 0) return;
+
+      const windowData = rawData.slice(-currentWindow);
+      const dataset = calculateRollingBigPct(windowData, 10);
+
+      // Update Summary Cards
+      const total = dataset.length;
+      const bigCount = dataset.filter(d => d.size === 'BIG').length;
+      const smallCount = total - bigCount;
+      const bigPct = total > 0 ? ((bigCount / total) * 100).toFixed(1) : 0;
+      const smallPct = total > 0 ? ((smallCount / total) * 100).toFixed(1) : 0;
+      const sumNum = dataset.reduce((acc, d) => acc + d.number, 0);
+      const avgNum = total > 0 ? (sumNum / total).toFixed(1) : 0;
+      const streak = calculateStreak(dataset);
+
+      document.getElementById('data-count-badge').innerText = `${total} Rounds`;
+      document.getElementById('stat-big-val').innerText = `${bigPct}% (${bigCount})`;
+      document.getElementById('stat-small-val').innerText = `${smallPct}% (${smallCount})`;
+      document.getElementById('stat-streak-val').innerText = `${streak.count}x ${streak.type}`;
+      document.getElementById('stat-avg-val').innerText = avgNum;
+
+      const container = document.getElementById('chart-container');
+      const width = container.clientWidth || 360;
+      const height = currentMode === 'dual' ? 340 : 230;
+
+      const svg = d3.select('#d3-svg');
+      svg.selectAll('*').remove();
+      svg.attr('width', width).attr('height', height).attr('viewBox', `0 0 ${width} ${height}`);
+
+      const margin = { top: 20, right: 18, bottom: 25, left: 30 };
+      const innerWidth = width - margin.left - margin.right;
+
+      const defs = svg.append('defs');
+
+      // Gradients
+      const numGrad = defs.append('linearGradient')
+        .attr('id', 'num-area-grad')
+        .attr('x1', '0%').attr('y1', '0%')
+        .attr('x2', '0%').attr('y2', '100%');
+      numGrad.append('stop').attr('offset', '0%').attr('stop-color', '#10B981').attr('stop-opacity', 0.35);
+      numGrad.append('stop').attr('offset', '50%').attr('stop-color', '#10B981').attr('stop-opacity', 0.05);
+      numGrad.append('stop').attr('offset', '100%').attr('stop-color', '#EF4444').attr('stop-opacity', 0.25);
+
+      const freqGrad = defs.append('linearGradient')
+        .attr('id', 'freq-area-grad')
+        .attr('x1', '0%').attr('y1', '0%')
+        .attr('x2', '0%').attr('y2', '100%');
+      freqGrad.append('stop').attr('offset', '0%').attr('stop-color', '#10B981').attr('stop-opacity', 0.4);
+      freqGrad.append('stop').attr('offset', '50%').attr('stop-color', '#3B82F6').attr('stop-opacity', 0.1);
+      freqGrad.append('stop').attr('offset', '100%').attr('stop-color', '#EF4444').attr('stop-opacity', 0.35);
+
+      const tooltip = d3.select('#tooltip');
+
+      if (currentMode === 'trend') {
+        renderTrendChart(svg, dataset, margin, innerWidth, height - margin.top - margin.bottom, tooltip);
+      } else if (currentMode === 'frequency') {
+        renderFrequencyChart(svg, dataset, margin, innerWidth, height - margin.top - margin.bottom, tooltip);
+      } else {
+        renderDualChart(svg, dataset, margin, innerWidth, height, tooltip);
+      }
+    }
+
+    function renderTrendChart(svg, dataset, margin, innerWidth, innerHeight, tooltip) {
+      const g = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+
+      const xScale = d3.scaleLinear()
+        .domain([0, dataset.length - 1])
+        .range([0, innerWidth]);
+
+      const yScale = d3.scaleLinear()
+        .domain([-0.5, 9.5])
+        .range([innerHeight, 0]);
+
+      // Subtle BIG / SMALL Zones
+      g.append('rect')
+        .attr('x', 0).attr('y', yScale(9.5))
+        .attr('width', innerWidth)
+        .attr('height', yScale(4.5) - yScale(9.5))
+        .attr('fill', 'rgba(16, 185, 129, 0.05)');
+
+      g.append('rect')
+        .attr('x', 0).attr('y', yScale(4.5))
+        .attr('width', innerWidth)
+        .attr('height', yScale(-0.5) - yScale(4.5))
+        .attr('fill', 'rgba(239, 68, 68, 0.05)');
+
+      // Grid
+      g.append('g').attr('class', 'grid')
+        .call(d3.axisLeft(yScale).ticks(5).tickSize(-innerWidth).tickFormat(''));
+
+      // Boundary Line at 4.5
+      g.append('line')
+        .attr('class', 'boundary-line')
+        .attr('x1', 0).attr('x2', innerWidth)
+        .attr('y1', yScale(4.5)).attr('y2', yScale(4.5));
+
+      g.append('text')
+        .attr('class', 'boundary-text')
+        .attr('x', innerWidth - 5)
+        .attr('y', yScale(4.5) - 4)
+        .attr('text-anchor', 'end')
+        .text('Threshold 4.5');
+
+      // Zone Labels
+      g.append('text')
+        .attr('x', 6).attr('y', yScale(9.2))
+        .attr('fill', '#10B981').attr('font-size', '9px').attr('font-weight', '700')
+        .text('BIG ZONE (5-9)');
+
+      g.append('text')
+        .attr('x', 6).attr('y', yScale(0.2))
+        .attr('fill', '#EF4444').attr('font-size', '9px').attr('font-weight', '700')
+        .text('SMALL ZONE (0-4)');
+
+      // Axes
+      g.append('g')
+        .attr('class', 'axis')
+        .attr('transform', `translate(0,${innerHeight})`)
+        .call(d3.axisBottom(xScale).ticks(Math.min(dataset.length, 6)).tickFormat(i => `R${i + 1}`));
+
+      g.append('g')
+        .attr('class', 'axis')
+        .call(d3.axisLeft(yScale).ticks(10).tickFormat(d3.format('d')));
+
+      // Area under curve
+      const area = d3.area()
+        .x((d, i) => xScale(i))
+        .y0(yScale(4.5))
+        .y1(d => yScale(d.number))
+        .curve(d3.curveMonotoneX);
+
+      g.append('path')
+        .datum(dataset)
+        .attr('fill', 'url(#num-area-grad)')
+        .attr('d', area);
+
+      // Line
+      const line = d3.line()
+        .x((d, i) => xScale(i))
+        .y(d => yScale(d.number))
+        .curve(d3.curveMonotoneX);
+
+      g.append('path')
+        .datum(dataset)
+        .attr('fill', 'none')
+        .attr('stroke', '#34D399')
+        .attr('stroke-width', 2)
+        .attr('d', line);
+
+      // Moving Average (10-round EMA/SMA)
+      const smaData = [];
+      for (let i = 0; i < dataset.length; i++) {
+        const start = Math.max(0, i - 4);
+        const slice = dataset.slice(start, i + 1);
+        const avg = slice.reduce((a, b) => a + b.number, 0) / slice.length;
+        smaData.push({ x: i, y: avg });
+      }
+
+      const smaLine = d3.line()
+        .x(d => xScale(d.x))
+        .y(d => yScale(d.y))
+        .curve(d3.curveBasis);
+
+      g.append('path')
+        .datum(smaData)
+        .attr('fill', 'none')
+        .attr('stroke', '#F59E0B')
+        .attr('stroke-width', 1.5)
+        .attr('stroke-dasharray', '3,3')
+        .attr('d', smaLine);
+
+      // Circles for Points
+      g.selectAll('.dot')
+        .data(dataset)
+        .enter()
+        .append('circle')
+        .attr('class', 'dot')
+        .attr('cx', (d, i) => xScale(i))
+        .attr('cy', d => yScale(d.number))
+        .attr('r', dataset.length > 50 ? 3 : 4.5)
+        .attr('fill', d => d.size === 'BIG' ? '#10B981' : '#EF4444')
+        .attr('stroke', d => d.color.includes('VIOLET') ? '#A855F7' : '#FFFFFF')
+        .attr('stroke-width', d => d.color.includes('VIOLET') ? 2 : 1.2);
+
+      // Touch / Mouse Tracking Overlay
+      attachOverlay(g, dataset, xScale, yScale, innerWidth, innerHeight, tooltip, margin);
+    }
+
+    function renderFrequencyChart(svg, dataset, margin, innerWidth, innerHeight, tooltip) {
+      const g = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+
+      const xScale = d3.scaleLinear()
+        .domain([0, dataset.length - 1])
+        .range([0, innerWidth]);
+
+      const yScale = d3.scaleLinear()
+        .domain([0, 100])
+        .range([innerHeight, 0]);
+
+      // Grid
+      g.append('g').attr('class', 'grid')
+        .call(d3.axisLeft(yScale).ticks(5).tickSize(-innerWidth).tickFormat(''));
+
+      // 50% Equilibrium Line
+      g.append('line')
+        .attr('class', 'boundary-line')
+        .attr('x1', 0).attr('x2', innerWidth)
+        .attr('y1', yScale(50)).attr('y2', yScale(50));
+
+      g.append('text')
+        .attr('class', 'boundary-text')
+        .attr('x', innerWidth - 5)
+        .attr('y', yScale(50) - 4)
+        .attr('text-anchor', 'end')
+        .text('50% Equilibrium');
+
+      // Axes
+      g.append('g')
+        .attr('class', 'axis')
+        .attr('transform', `translate(0,${innerHeight})`)
+        .call(d3.axisBottom(xScale).ticks(Math.min(dataset.length, 6)).tickFormat(i => `R${i + 1}`));
+
+      g.append('g')
+        .attr('class', 'axis')
+        .call(d3.axisLeft(yScale).ticks(5).tickFormat(d => `${d}%`));
+
+      // Area fill from 50%
+      const area = d3.area()
+        .x((d, i) => xScale(i))
+        .y0(yScale(50))
+        .y1(d => yScale(d.rollingBigPct))
+        .curve(d3.curveMonotoneX);
+
+      g.append('path')
+        .datum(dataset)
+        .attr('fill', 'url(#freq-area-grad)')
+        .attr('d', area);
+
+      // Main Freq Line
+      const line = d3.line()
+        .x((d, i) => xScale(i))
+        .y(d => yScale(d.rollingBigPct))
+        .curve(d3.curveMonotoneX);
+
+      g.append('path')
+        .datum(dataset)
+        .attr('fill', 'none')
+        .attr('stroke', '#60A5FA')
+        .attr('stroke-width', 2.5)
+        .attr('d', line);
+
+      // Dots
+      g.selectAll('.freq-dot')
+        .data(dataset)
+        .enter()
+        .append('circle')
+        .attr('class', 'freq-dot')
+        .attr('cx', (d, i) => xScale(i))
+        .attr('cy', d => yScale(d.rollingBigPct))
+        .attr('r', 3.5)
+        .attr('fill', d => d.rollingBigPct >= 50 ? '#10B981' : '#EF4444')
+        .attr('stroke', '#0B1120')
+        .attr('stroke-width', 1);
+
+      attachOverlay(g, dataset, xScale, yScale, innerWidth, innerHeight, tooltip, margin, true);
+    }
+
+    function renderDualChart(svg, dataset, margin, innerWidth, totalHeight, tooltip) {
+      const topHeight = 145;
+      const bottomHeight = 100;
+      const gap = 30;
+
+      // Top chart: Number Trend
+      const gTop = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+      const xScale = d3.scaleLinear().domain([0, dataset.length - 1]).range([0, innerWidth]);
+      const yNum = d3.scaleLinear().domain([-0.5, 9.5]).range([topHeight, 0]);
+
+      gTop.append('g').attr('class', 'grid')
+        .call(d3.axisLeft(yNum).ticks(4).tickSize(-innerWidth).tickFormat(''));
+
+      gTop.append('line').attr('class', 'boundary-line')
+        .attr('x1', 0).attr('x2', innerWidth).attr('y1', yNum(4.5)).attr('y2', yNum(4.5));
+
+      const lineNum = d3.line().x((d, i) => xScale(i)).y(d => yNum(d.number)).curve(d3.curveMonotoneX);
+      gTop.append('path').datum(dataset).attr('fill', 'none').attr('stroke', '#34D399').attr('stroke-width', 1.8).attr('d', lineNum);
+
+      gTop.selectAll('.dot')
+        .data(dataset)
+        .enter().append('circle')
+        .attr('cx', (d, i) => xScale(i)).attr('cy', d => yNum(d.number)).attr('r', 3)
+        .attr('fill', d => d.size === 'BIG' ? '#10B981' : '#EF4444');
+
+      gTop.append('g').attr('class', 'axis').call(d3.axisLeft(yNum).ticks(5).tickFormat(d3.format('d')));
+
+      // Bottom chart: BIG %
+      const gBottom = svg.append('g').attr('transform', `translate(${margin.left},${margin.top + topHeight + gap})`);
+      const yFreq = d3.scaleLinear().domain([0, 100]).range([bottomHeight, 0]);
+
+      gBottom.append('g').attr('class', 'grid')
+        .call(d3.axisLeft(yFreq).ticks(3).tickSize(-innerWidth).tickFormat(''));
+
+      gBottom.append('line').attr('class', 'boundary-line')
+        .attr('x1', 0).attr('x2', innerWidth).attr('y1', yFreq(50)).attr('y2', yFreq(50));
+
+      const lineFreq = d3.line().x((d, i) => xScale(i)).y(d => yFreq(d.rollingBigPct)).curve(d3.curveMonotoneX);
+      gBottom.append('path').datum(dataset).attr('fill', 'none').attr('stroke', '#60A5FA').attr('stroke-width', 2).attr('d', lineFreq);
+
+      gBottom.append('g').attr('class', 'axis').attr('transform', `translate(0,${bottomHeight})`)
+        .call(d3.axisBottom(xScale).ticks(5).tickFormat(i => `R${i + 1}`));
+
+      gBottom.append('g').attr('class', 'axis')
+        .call(d3.axisLeft(yFreq).ticks(3).tickFormat(d => `${d}%`));
+
+      attachOverlay(gTop, dataset, xScale, yNum, innerWidth, topHeight, tooltip, margin);
+    }
+
+    function attachOverlay(g, dataset, xScale, yScale, innerWidth, innerHeight, tooltip, margin, isFreq = false) {
+      const focusLine = g.append('line')
+        .attr('stroke', '#94A3B8')
+        .attr('stroke-width', 1)
+        .attr('stroke-dasharray', '2,2')
+        .attr('y1', 0).attr('y2', innerHeight)
+        .style('display', 'none');
+
+      const focusDot = g.append('circle')
+        .attr('r', 6)
+        .attr('fill', 'none')
+        .attr('stroke', '#FFFFFF')
+        .attr('stroke-width', 2)
+        .style('display', 'none');
+
+      const bisect = d3.bisector((d, i) => i).center;
+
+      function onMove(event) {
+        const coords = d3.pointer(event);
+        const xPos = coords[0];
+        const idx = Math.max(0, Math.min(dataset.length - 1, Math.round(xScale.invert(xPos))));
+        const d = dataset[idx];
+        if (!d) return;
+
+        const cx = xScale(idx);
+        const cy = isFreq ? yScale(d.rollingBigPct) : yScale(d.number);
+
+        focusLine.style('display', null).attr('x1', cx).attr('x2', cx);
+        focusDot.style('display', null).attr('cx', cx).attr('cy', cy);
+
+        tooltip.style('display', 'block')
+          .style('left', `${cx + margin.left}px`)
+          .style('top', `${cy + margin.top}px`)
+          .html(`
+            <div class="tooltip-period">Round #${idx + 1} (${d.periodId || ''})</div>
+            <div class="tooltip-val" style="color: ${d.size === 'BIG' ? '#34D399' : '#F87171'}">
+              Number: ${d.number} (${d.size})
+            </div>
+            <div style="font-size: 10px; color: #94A3B8; margin-top: 3px;">
+              Rolling BIG: ${d.rollingBigPct}% | Color: ${d.color}
+            </div>
+          `);
+      }
+
+      function onOut() {
+        focusLine.style('display', 'none');
+        focusDot.style('display', 'none');
+        tooltip.style('display', 'none');
+      }
+
+      g.append('rect')
+        .attr('width', innerWidth)
+        .attr('height', innerHeight)
+        .attr('fill', 'transparent')
+        .style('cursor', 'crosshair')
+        .on('mousemove touchmove', onMove)
+        .on('mouseout touchend', onOut);
+    }
+
+    // Default Seed Data for immediate testing if opened directly
+    const defaultData = [];
+    const seedNums = [7,2,8,9,3,1,6,8,4,0,5,9,7,3,2,8,6,9,1,4,7,8,5,2,3,9,6,4,1,8,7,9,3,6,2,8,5,7,1,0,3,9,6,2,8,4,5,7,9,1,6,3,8,2,7,5,9,0,4,8,1,7,3,9,6,2,5,8,4,1,9,7,3,6,2,8,5,0,4,7,9,1,3,6,8,2,5,7,9,4,1,8,3,6,2,7,9,5,0,8];
+    for (let i = 0; i < 100; i++) {
+      const num = seedNums[i % seedNums.length];
+      defaultData.push({
+        periodId: '1000' + (400 + i),
+        number: num,
+        size: num >= 5 ? 'BIG' : 'SMALL',
+        color: num === 0 ? 'RED+VIOLET' : (num === 5 ? 'GREEN+VIOLET' : ([1,3,7,9].includes(num) ? 'GREEN' : 'RED'))
+      });
+    }
+    rawData = defaultData;
+    render();
+  </script>
+</body>
+</html>
